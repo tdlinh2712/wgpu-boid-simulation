@@ -1,7 +1,7 @@
 use log::debug;
 use wgpu::util::DeviceExt;
 use winit::{event::WindowEvent, window::Window};
-use crate::vertex::{Vertex, VERTICES};
+use crate::{boid::{generate_boids, triangle_buffer_layout, Boid, TRIANGLE_VERTICES}, vertex::{Vertex, VERTICES}};
 
 pub struct State<'a> {
     pub surface: wgpu::Surface<'a>,
@@ -12,7 +12,9 @@ pub struct State<'a> {
     pub window: &'a Window,
     pub render_pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
+    pub instance_buffer: wgpu::Buffer,
     pub num_vertices: u32,
+    pub num_instances: u32,
 }
 
 impl<'a> State<'a> {
@@ -93,15 +95,18 @@ impl<'a> State<'a> {
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: Some("vs_main"), // 1.
+                entry_point: Some("boid_vs_main"), // 1.
                 buffers: &[
-                    Vertex::desc(),
+                    // boid instance buffer layout
+                    Boid::desc(),
+                    //shared triangle buffer layout
+                    triangle_buffer_layout(),
                 ], // 2.
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState { // 3.
                 module: &shader,
-                entry_point: Some("fs_main"),
+                entry_point: Some("boid_fs_main"),
                 targets: &[Some(wgpu::ColorTargetState { // 4.
                     format: config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
@@ -131,15 +136,29 @@ impl<'a> State<'a> {
             cache: None, // 6.
         });
 
+        const POPULATION : u32 = 100;
+        let boids = generate_boids(POPULATION);
+        debug!("{:?}", boids);
+        // shared vertex buffer across all boids.
+        // Since each boid is essentially a triangle, we will redraw this one triangle instance N times,
+        // each with different parameters from the boids array
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor{
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(VERTICES),
+                label: Some("vertex buffer"),
+                contents: bytemuck::cast_slice(&TRIANGLE_VERTICES),
                 usage: wgpu::BufferUsages::VERTEX,
             }
         );
-        let num_vertices = VERTICES.len() as u32;
+        
+        // This is the boid instance buffer, which contains the information of the boids (position & velocity)
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&boids),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
 
+        let num_vertices = TRIANGLE_VERTICES.len() as u32;
+        let num_instances = boids.len() as u32;
         Self {
             surface,
             device,
@@ -149,7 +168,9 @@ impl<'a> State<'a> {
             window,
             render_pipeline,
             vertex_buffer,
+            instance_buffer,
             num_vertices,
+            num_instances,
         }
     }
 
@@ -205,8 +226,11 @@ impl<'a> State<'a> {
             });
             
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..self.num_vertices, 0..1);
+
+            render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));        // N boids
+            render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
+
+            render_pass.draw(0..3, 0..self.num_instances as u32); // 3 vertices, N instances
         }
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
