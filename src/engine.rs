@@ -1,3 +1,6 @@
+use log::debug;
+use crate::state::State;
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -5,11 +8,11 @@ use winit::{
     event::*,
     event_loop::EventLoop,
     keyboard::{KeyCode, PhysicalKey},
-    window::WindowBuilder,
+    window::{Window, WindowBuilder},
 };
 
 #[cfg_attr(target_arch="wasm32", wasm_bindgen(start))]
-pub fn run() {
+pub async fn run() {
     // replace env_logger:init line with console.log for wasm
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
@@ -43,23 +46,61 @@ pub fn run() {
             .expect("Couldn't append canvas to document body.");
     }
 
-    let _ = event_loop.run(move |event, control_flow| match event {
-        Event::WindowEvent {
-            ref event,
-            window_id,
-        } if window_id == window.id() => match event {
-            WindowEvent::CloseRequested
-            | WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        state: ElementState::Pressed,
-                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+    let mut state = State::new(&window).await;
+    let mut surface_configured = false;
+    let _ = event_loop.run(move |event, control_flow| {
+        match event {
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } if window_id == state.window.id() => if !state.input(event) {
+                match event {
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        event:
+                            KeyEvent {
+                                state: ElementState::Pressed,
+                                physical_key: PhysicalKey::Code(KeyCode::Escape),
+                                ..
+                            },
                         ..
+                    } => control_flow.exit(),
+                    WindowEvent::Resized(new_size) => {
+                        surface_configured = true;
+                        state.resize(*new_size);
                     },
-                ..
-            } => control_flow.exit(),
+                    WindowEvent::RedrawRequested => {
+                        state.window().request_redraw();
+
+                        if !surface_configured {
+                            return;
+                        }
+
+                        state.update();
+                        match state.render() {
+                            Ok(_) => {}
+
+                            // Reconfigure the surface if it's lost or outdated
+                            Err(
+                                wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
+                            ) => state.resize(state.size),
+
+                            // quite if OOM
+                            Err(wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other,) => {
+                                log::error!("Out of memory!");
+                                control_flow.exit();
+                            }
+
+                            // log when surface timeout (when a frame takes too long to displace)
+                            Err(wgpu::SurfaceError::Timeout,) => {
+                                log::warn!("Surface timeout!")
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
             _ => {}
-        },
-        _ => {}
+        }
     });
 }

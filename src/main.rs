@@ -1,5 +1,5 @@
 use boids_sim::engine;
 
 fn main() {
-    engine::run();
+    pollster::block_on(engine::run());
 }
