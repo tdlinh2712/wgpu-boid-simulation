@@ -1,6 +1,7 @@
 use log::debug;
+use wgpu::util::DeviceExt;
 use winit::{event::WindowEvent, window::Window};
-
+use crate::vertex::{Vertex, VERTICES};
 
 pub struct State<'a> {
     pub surface: wgpu::Surface<'a>,
@@ -10,6 +11,8 @@ pub struct State<'a> {
     pub size: winit::dpi::PhysicalSize<u32>,
     pub window: &'a Window,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub vertex_buffer: wgpu::Buffer,
+    pub num_vertices: u32,
 }
 
 impl<'a> State<'a> {
@@ -91,7 +94,9 @@ impl<'a> State<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"), // 1.
-                buffers: &[], // 2.
+                buffers: &[
+                    Vertex::desc(),
+                ], // 2.
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState { // 3.
@@ -124,7 +129,16 @@ impl<'a> State<'a> {
             },
             multiview: None, // 5.
             cache: None, // 6.
-        });        
+        });
+
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor{
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(VERTICES),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+        let num_vertices = VERTICES.len() as u32;
 
         Self {
             surface,
@@ -134,6 +148,8 @@ impl<'a> State<'a> {
             size,
             window,
             render_pipeline,
+            vertex_buffer,
+            num_vertices,
         }
     }
 
@@ -189,7 +205,8 @@ impl<'a> State<'a> {
             });
             
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw(0..3, 0..1);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.draw(0..self.num_vertices, 0..1);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
