@@ -30,9 +30,9 @@ impl Boid {
 }
 
 pub const TRIANGLE_VERTICES: [[f32; 2]; 3] = [
-    [0.0, 0.02],
-    [-0.015, -0.015],
-    [0.015, -0.015],
+    [0.0, 0.015],
+    [-0.0075, -0.01],
+    [0.0075, -0.01],
 ];
 
 pub fn triangle_buffer_layout() -> wgpu::VertexBufferLayout<'static> {

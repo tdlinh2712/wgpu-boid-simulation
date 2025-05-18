@@ -1,7 +1,15 @@
+use std::time::{Duration, Instant};
+
 use log::debug;
-use wgpu::{util::DeviceExt, ComputePipelineDescriptor, PipelineLayoutDescriptor};
+use wgpu::{util::DeviceExt, ComputePipelineDescriptor, Instance, PipelineLayoutDescriptor};
 use winit::{event::WindowEvent, window::Window};
 use crate::{boid::{generate_boids, triangle_buffer_layout, Boid, TRIANGLE_VERTICES}, vertex::{Vertex, VERTICES}};
+
+struct Fps {
+    frame_num: usize,
+    last_frame_num: usize,
+    last_fps_time: Instant,
+}
 
 pub struct State<'a> {
     pub surface: wgpu::Surface<'a>,
@@ -11,11 +19,13 @@ pub struct State<'a> {
     pub size: winit::dpi::PhysicalSize<u32>,
     pub window: &'a Window,
     pub render_pipeline: wgpu::RenderPipeline,
-    pub vertex_buffer: wgpu::Buffer,
-    pub instance_buffer: wgpu::Buffer,
+    pub compute_pipeline: wgpu::ComputePipeline,
     pub num_vertices: u32,
     pub num_instances: u32,
-    pub compute_pipeline: wgpu::ComputePipeline,
+    pub vertex_buffer: wgpu::Buffer,
+    pub instance_buffers: Vec<wgpu::Buffer>,
+    pub compute_bind_groups: Vec<wgpu::BindGroup>,
+    pub fps: Fps,
 }
 
 impl<'a> State<'a> {
@@ -80,6 +90,13 @@ impl<'a> State<'a> {
             desired_maximum_frame_latency: 2,
         };
         
+        const POPULATION : u32 = 10000;
+        let boids = generate_boids(POPULATION);
+        debug!("{:?}", boids);
+        // This is the boid instance buffer, which contains the information of the boids (position & velocity)
+        let num_vertices = TRIANGLE_VERTICES.len() as u32;
+        let num_instances = boids.len() as u32;
+
         // load in the shaders
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -137,30 +154,6 @@ impl<'a> State<'a> {
             cache: None, // 6.
         });
 
-        const POPULATION : u32 = 100;
-        let boids = generate_boids(POPULATION);
-        debug!("{:?}", boids);
-        // shared vertex buffer across all boids.
-        // Since each boid is essentially a triangle, we will redraw this one triangle instance N times,
-        // each with different parameters from the boids array
-        let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor{
-                label: Some("vertex buffer"),
-                contents: bytemuck::cast_slice(&TRIANGLE_VERTICES),
-                usage: wgpu::BufferUsages::VERTEX,
-            }
-        );
-        
-        // This is the boid instance buffer, which contains the information of the boids (position & velocity)
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&boids),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let num_vertices = TRIANGLE_VERTICES.len() as u32;
-        let num_instances = boids.len() as u32;
-
         // load compute shader
         let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Compute Shader"),
@@ -207,6 +200,52 @@ impl<'a> State<'a> {
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
+        // shared vertex buffer across all boids.
+        // Since each boid is essentially a triangle, we will redraw this one triangle instance N times,
+        // each with different parameters from the boids array
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor{
+                label: Some("vertex buffer"),
+                contents: bytemuck::cast_slice(&TRIANGLE_VERTICES),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+
+        let mut instance_buffers : Vec<wgpu::Buffer> = Vec::<wgpu::Buffer>::new();
+
+        for i in 0..2 {
+            instance_buffers.push(
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Instance Buffer"),
+                    contents: bytemuck::cast_slice(&boids),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+                })
+            )
+        };
+        let mut compute_bind_groups : Vec<wgpu::BindGroup> = Vec::<wgpu::BindGroup>::new();
+        for i in 0..2 {
+            compute_bind_groups.push(
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some(&format!("compute bind group {}", i)),
+                    layout: &bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: instance_buffers[i].as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: instance_buffers[(i + 1) % 2].as_entire_binding(), // bind to opposite buffer
+                        },
+                    ]
+                })
+            )
+        }
+        let fps = Fps {
+            frame_num: 0,
+            last_frame_num: 0,
+            last_fps_time: Instant::now(),
+        };
 
         Self {
             surface,
@@ -216,14 +255,15 @@ impl<'a> State<'a> {
             size,
             window,
             render_pipeline,
-            vertex_buffer,
-            instance_buffer,
+            compute_pipeline,
             num_vertices,
             num_instances,
-            compute_pipeline
+            vertex_buffer,
+            instance_buffers,
+            compute_bind_groups,
+            fps,
         }
     }
-
     pub fn window(&self) -> &Window {
         &self.window
     }
@@ -252,7 +292,17 @@ impl<'a> State<'a> {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor{
             label: Some("RenderEncoder"),
         });
-        // clearing the screen
+        // compute pass
+        {  
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Compute Pass"), 
+                timestamp_writes: None 
+            });
+            compute_pass.set_pipeline(&self.compute_pipeline);
+            compute_pass.set_bind_group(0,&self.compute_bind_groups[self.fps.frame_num % 2], &[]);
+            compute_pass.dispatch_workgroups((self.num_instances + 63) / 64, 1, 1);
+        }
+        // render pass
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -276,12 +326,25 @@ impl<'a> State<'a> {
             });
             
             render_pass.set_pipeline(&self.render_pipeline);
-
-            render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));        // N boids
+            
+            render_pass.set_vertex_buffer(0, self.instance_buffers[(self.fps.frame_num + 1) % 2].slice(..));        // N boids
             render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
 
             render_pass.draw(0..3, 0..self.num_instances as u32); // 3 vertices, N instances
         }
+        self.fps.frame_num+=1;
+
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.fps.last_fps_time);
+
+        if elapsed >= Duration::from_secs(1) {
+            let frame_count = self.fps.frame_num - self.fps.last_frame_num;
+            let fps = frame_count as f32 / elapsed.as_secs_f32();
+            println!("FPS: {:.2}", fps);
+
+            self.fps.last_fps_time = now;
+        }
+
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
         Ok(())
