@@ -1,5 +1,5 @@
 use log::debug;
-use wgpu::util::DeviceExt;
+use wgpu::{util::DeviceExt, ComputePipelineDescriptor, PipelineLayoutDescriptor};
 use winit::{event::WindowEvent, window::Window};
 use crate::{boid::{generate_boids, triangle_buffer_layout, Boid, TRIANGLE_VERTICES}, vertex::{Vertex, VERTICES}};
 
@@ -15,6 +15,7 @@ pub struct State<'a> {
     pub instance_buffer: wgpu::Buffer,
     pub num_vertices: u32,
     pub num_instances: u32,
+    pub compute_pipeline: wgpu::ComputePipeline,
 }
 
 impl<'a> State<'a> {
@@ -159,6 +160,54 @@ impl<'a> State<'a> {
 
         let num_vertices = TRIANGLE_VERTICES.len() as u32;
         let num_instances = boids.len() as u32;
+
+        // load compute shader
+        let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Compute Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("compute.wgsl").into()),
+        });
+
+        let bind_group_layout  =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new((num_instances * 16) as _), //16 bytes is the size of Boid struct
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new((num_instances * 16) as _),
+                    },
+                    count: None,
+                },
+            ],
+            label: None,
+        });
+
+        let compute_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("compute"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let compute_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("Compute Pipeline"),
+            layout: Some(&compute_pipeline_layout),
+            module: &compute_shader,
+            entry_point: Some("main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+
         Self {
             surface,
             device,
@@ -171,6 +220,7 @@ impl<'a> State<'a> {
             instance_buffer,
             num_vertices,
             num_instances,
+            compute_pipeline
         }
     }
 
