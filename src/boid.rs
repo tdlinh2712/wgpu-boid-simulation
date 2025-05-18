@@ -9,11 +9,22 @@ pub struct Boid {
 
 pub fn generate_boids(population: u32) -> Vec<Boid> { 
     let mut rng = rand::thread_rng();
+
     (0..population)
-    .map(|_| Boid { 
-        pos:[rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)],
-        vel: [rng.gen_range(-0.01..0.01), rng.gen_range(-0.01..0.01)],      
-    }).collect()
+    .map(|_| {
+        // initializing velocities to be pointing at random directions
+        let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+        let speed = rng.gen_range(0.005..0.015);
+        // constraint intial positions to be in a radius
+
+        let r = rng.gen_range(0.1..0.7); // radial distance
+        let theta = rng.gen_range(0.0..std::f32::consts::TAU);
+        
+        Boid { 
+            pos:[r * theta.cos(), r * theta.sin()],
+            vel: [angle.cos() * speed, angle.sin() * speed],      
+        }}
+    ).collect()
 }
 
 impl Boid {

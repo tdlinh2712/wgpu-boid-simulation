@@ -90,7 +90,7 @@ impl<'a> State<'a> {
             desired_maximum_frame_latency: 2,
         };
         
-        const POPULATION : u32 = 10000;
+        const POPULATION : u32 = 40000;
         let boids = generate_boids(POPULATION);
         debug!("{:?}", boids);
         // This is the boid instance buffer, which contains the information of the boids (position & velocity)

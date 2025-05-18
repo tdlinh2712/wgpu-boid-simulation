@@ -8,13 +8,13 @@ struct Boid {
 }
 
 // constan values -> TODO: move this to parameters
-const DISTANCE : f32 = 0.4;
-const DELTA_T : f32 = 0.02; // smaller step, smoother motion
-const SEPARATION_DISTANCE : f32 = 0.04; // smaller separation distance 
-const COHESION_WEIGHT : f32 = 0.2; // gentle pull towar center 
-const ALIGNMENT_WEIGHT : f32 = 0.3; // a bit more to match velocity
-const SEPARATION_WEIGHT : f32 = 0.8; // stronger force to avoid overlap
-const MAX_SPEED : f32 = 0.2; // keep boids from moving too fast
+const DISTANCE : f32 = 0.05;
+const DELTA_T : f32 = 0.03; // smaller step, smoother motion
+const SEPARATION_DISTANCE : f32 = 0.02; // smaller separation distance 
+const COHESION_WEIGHT : f32 = 0.3; // gentle pull towar center 
+const ALIGNMENT_WEIGHT : f32 = 0.4; // a bit more to match velocity
+const SEPARATION_WEIGHT : f32 = 0.7; // stronger force to avoid overlap
+const MAX_SPEED : f32 = 0.35; // keep boids from moving too fast
 // Storage buffer - input. out
 
 @group(0) @binding(0)

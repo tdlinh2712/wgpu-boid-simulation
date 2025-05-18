@@ -5,10 +5,7 @@ use crate::state::State;
 use wasm_bindgen::prelude::*;
 
 use winit::{
-    event::*,
-    event_loop::EventLoop,
-    keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowBuilder},
+    dpi::LogicalSize, event::*, event_loop::EventLoop, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowBuilder}
 };
 
 #[cfg_attr(target_arch="wasm32", wasm_bindgen(start))]
@@ -24,7 +21,7 @@ pub async fn run() {
     }
     
     let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window: Window = WindowBuilder::new().with_min_inner_size(LogicalSize::new(1280.0, 720.0)).build(&event_loop).unwrap();
 
 
     #[cfg(target_arch = "wasm32")]
