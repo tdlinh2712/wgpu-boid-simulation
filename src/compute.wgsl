@@ -8,13 +8,13 @@ struct Boid {
 }
 
 // constan values -> TODO: move this to parameters
-const DISTANCE : f32 = 0.05;
+const DISTANCE : f32 = 0.1;
 const DELTA_T : f32 = 0.03; // smaller step, smoother motion
 const SEPARATION_DISTANCE : f32 = 0.02; // smaller separation distance 
 const COHESION_WEIGHT : f32 = 0.3; // gentle pull towar center 
 const ALIGNMENT_WEIGHT : f32 = 0.4; // a bit more to match velocity
 const SEPARATION_WEIGHT : f32 = 0.7; // stronger force to avoid overlap
-const MAX_SPEED : f32 = 0.35; // keep boids from moving too fast
+const MAX_SPEED : f32 = 0.4; // keep boids from moving too fast
 // Storage buffer - input. out
 
 @group(0) @binding(0)
@@ -50,9 +50,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         if (dist > DISTANCE) {
             continue;
         }
-        if (dist <= SEPARATION_DISTANCE) {
+        if (dist <= SEPARATION_DISTANCE && dist != 0.0) {
         // separation: remove avg position of surrounding boids
-        avg_separation -= (other.pos - current_boid.pos); 
+            avg_separation -= (other.pos - current_boid.pos); 
         }
         // Alignment : add avg velocity of the surrounding boids
         avg_alignment += other.vel;

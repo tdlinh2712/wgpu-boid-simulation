@@ -41,6 +41,7 @@ fn boid_vs_main(
     );
     out.clip_position = vec4<f32>(instance_pos + pos, 0.0, 1.0);
     out.color = vec3<f32>(0.9, 0.6, 0.6); // light pink
+    return out;
 }
 
 // Fragment shader

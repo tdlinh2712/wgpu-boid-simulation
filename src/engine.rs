@@ -21,7 +21,7 @@ pub async fn run() {
     }
     
     let event_loop = EventLoop::new().unwrap();
-    let window: Window = WindowBuilder::new().with_min_inner_size(LogicalSize::new(1280.0, 720.0)).build(&event_loop).unwrap();
+    let window: Window = WindowBuilder::new().build(&event_loop).unwrap();
 
 
     #[cfg(target_arch = "wasm32")]
